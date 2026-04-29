@@ -1,0 +1,229 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Chess } from "chess.js";
+import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
+import { ChessBoard } from "@/components/ChessBoard";
+import { PUZZLES, type Puzzle } from "@/data/puzzles";
+import { toast } from "sonner";
+
+const Puzzles = () => {
+  const [index, setIndex] = useState(0);
+  const puzzle: Puzzle = PUZZLES[index];
+
+  const [game, setGame] = useState(() => new Chess(puzzle.fen));
+  const [fen, setFen] = useState(puzzle.fen);
+  const [step, setStep] = useState(0);
+  const [solved, setSolved] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+
+  const orientation: "white" | "black" = puzzle.sideToMove === "w" ? "white" : "black";
+
+  const loadPuzzle = (i: number) => {
+    const p = PUZZLES[i];
+    setIndex(i);
+    setGame(new Chess(p.fen));
+    setFen(p.fen);
+    setStep(0);
+    setSolved(false);
+    setShowHint(false);
+  };
+
+  const reset = () => loadPuzzle(index);
+  const next = () => loadPuzzle((index + 1) % PUZZLES.length);
+
+  const handleDrop = (source: string, target: string) => {
+    if (solved) return false;
+    const expected = puzzle.solution[step];
+    if (!expected) return false;
+    const expFrom = expected.slice(0, 2);
+    const expTo = expected.slice(2, 4);
+    const expPromo = expected.length > 4 ? expected.slice(4, 5) : "q";
+
+    if (source !== expFrom || target !== expTo) {
+      toast.error("Nu este mutarea corectă. Încearcă din nou.");
+      return false;
+    }
+    const next = new Chess(game.fen());
+    try {
+      next.move({ from: source, to: target, promotion: expPromo as "q" | "r" | "b" | "n" });
+    } catch {
+      return false;
+    }
+    setGame(next);
+    setFen(next.fen());
+    const newStep = step + 1;
+    setStep(newStep);
+    if (newStep >= puzzle.solution.length) {
+      setSolved(true);
+      toast.success("Excelent! Puzzle rezolvat.");
+    } else {
+      toast.message("Mutare corectă!");
+    }
+    return true;
+  };
+
+  // Auto-play opponent moves (odd indices in the solution)
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (autoTimer.current) {
+      clearTimeout(autoTimer.current);
+      autoTimer.current = null;
+    }
+    if (solved) return;
+    if (step === 0 || step >= puzzle.solution.length) return;
+    if (step % 2 !== 1) return; // only opponent steps
+    const uci = puzzle.solution[step];
+    autoTimer.current = setTimeout(() => {
+      const next = new Chess(game.fen());
+      try {
+        next.move({
+          from: uci.slice(0, 2),
+          to: uci.slice(2, 4),
+          promotion: (uci.length > 4 ? uci.slice(4, 5) : "q") as
+            | "q" | "r" | "b" | "n",
+        });
+      } catch {
+        return;
+      }
+      setGame(next);
+      setFen(next.fen());
+      const newStep = step + 1;
+      setStep(newStep);
+      if (newStep >= puzzle.solution.length) {
+        setSolved(true);
+        toast.success("Excelent! Puzzle rezolvat.");
+      }
+    }, 550);
+    return () => {
+      if (autoTimer.current) {
+        clearTimeout(autoTimer.current);
+        autoTimer.current = null;
+      }
+    };
+  }, [step, game, puzzle, solved]);
+
+  const stats = useMemo(
+    () => ({ total: PUZZLES.length, current: index + 1 }),
+    [index]
+  );
+
+  return (
+    <div className="min-h-dvh flex flex-col">
+      <SiteHeader />
+
+      <main className="flex-1 px-4 md:px-12 py-8 max-w-[1400px] mx-auto w-full">
+        <div className="mb-8 flex items-end justify-between flex-wrap gap-4">
+          <div>
+            <span className="text-[10px] uppercase tracking-[0.3em] text-ember font-mono">Studiu</span>
+            <h1 className="font-serif text-4xl md:text-5xl text-tungsten mt-2">Puzzle-uri tactice</h1>
+          </div>
+          <div className="text-xs font-mono uppercase tracking-widest text-tungsten-muted">
+            Puzzle {stats.current} / {stats.total}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8 lg:gap-12">
+          <div className="flex flex-col items-center">
+            <div className="w-full flex justify-between items-center mb-4 px-2 text-xs font-mono uppercase tracking-widest">
+              <span className="text-tungsten">{puzzle.title}</span>
+              <span className="text-ember">
+                {puzzle.sideToMove === "w" ? "Albul mută" : "Negrul mută"}
+              </span>
+            </div>
+            <ChessBoard
+              position={fen}
+              onPieceDrop={handleDrop}
+              boardOrientation={orientation}
+              allowDragging={!solved}
+            />
+            {solved && (
+              <div className="mt-6 px-6 py-3 border border-ember/40 bg-ember/10 text-ember font-mono text-xs uppercase tracking-widest">
+                ✓ Puzzle rezolvat
+              </div>
+            )}
+          </div>
+
+          <aside className="flex flex-col gap-6">
+            <section className="bg-mahogany-900 border border-wood/20 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[10px] font-mono uppercase tracking-[0.25em] text-tungsten-muted">
+                  Diagrama {String(stats.current).padStart(2, "0")}
+                </h3>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-ember">
+                  {puzzle.difficulty}
+                </span>
+              </div>
+              <h2 className="font-serif text-2xl text-tungsten mb-2">{puzzle.title}</h2>
+              <p className="text-sm text-tungsten-muted leading-relaxed">
+                {puzzle.sideToMove === "w" ? "Albul" : "Negrul"} mută. Găsește continuarea precisă.
+              </p>
+
+              <div className="mt-5">
+                <button
+                  onClick={() => setShowHint((s) => !s)}
+                  className="text-xs font-mono uppercase tracking-widest text-wood-light hover:text-ember transition-colors border-b border-wood/30 pb-0.5"
+                >
+                  {showHint ? "Ascunde indiciul" : "Arată indiciul"}
+                </button>
+                {showHint && (
+                  <p className="mt-3 text-sm italic text-tungsten/80 border-l-2 border-ember/40 pl-3">
+                    {puzzle.hint}
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <section className="flex gap-2">
+              <button
+                onClick={reset}
+                className="flex-1 px-4 py-3 border border-wood/40 text-tungsten text-xs uppercase tracking-widest hover:bg-mahogany-800 transition-colors"
+              >
+                Resetează
+              </button>
+              <button
+                onClick={next}
+                className="flex-1 px-4 py-3 bg-ember text-tungsten text-xs uppercase tracking-widest hover:bg-ember-glow transition-colors"
+              >
+                Următorul →
+              </button>
+            </section>
+
+            <section className="bg-mahogany-900 border border-wood/20 p-6">
+              <h3 className="text-[10px] font-mono uppercase tracking-[0.25em] text-tungsten-muted mb-4">
+                Arhivă
+              </h3>
+              <ol className="space-y-1">
+                {PUZZLES.map((p, i) => (
+                  <li key={p.id}>
+                    <button
+                      onClick={() => loadPuzzle(i)}
+                      className={`w-full text-left flex items-center justify-between py-2 px-3 transition-colors ${
+                        i === index
+                          ? "bg-ember/10 text-tungsten"
+                          : "text-tungsten-muted hover:text-tungsten hover:bg-mahogany-800"
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <span className="font-mono text-xs text-wood-light">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <span className="text-sm">{p.title}</span>
+                      </span>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-wood-light">
+                        {p.difficulty}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          </aside>
+        </div>
+      </main>
+
+      <SiteFooter />
+    </div>
+  );
+};
+
+export default Puzzles;

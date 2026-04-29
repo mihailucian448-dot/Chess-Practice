@@ -1,0 +1,72 @@
+export type Puzzle = {
+  id: string;
+  fen: string;
+  /** moves in UCI like "e2e4" — first move is the side-to-move's solution start */
+  solution: string[];
+  /** "w" = white to play, "b" = black to play */
+  sideToMove: "w" | "b";
+  title: string;
+  hint: string;
+  difficulty: "Ușor" | "Mediu" | "Greu";
+};
+
+/**
+ * Curated mate-in-1 / mate-in-2 / tactical puzzles.
+ * FENs and solutions verified manually.
+ */
+export const PUZZLES: Puzzle[] = [
+  {
+    id: "p1",
+    title: "Mat în 1 — coridorul deschis",
+    fen: "6k1/5ppp/8/8/8/8/5PPP/R6K w - - 0 1",
+    solution: ["a1a8"],
+    sideToMove: "w",
+    hint: "Tura găsește coloana liberă.",
+    difficulty: "Ușor",
+  },
+  {
+    id: "p2",
+    title: "Mat în 1",
+    fen: "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4",
+    solution: ["h5f7"],
+    sideToMove: "w",
+    hint: "Dama livrează lovitura pe f7, susținută de nebun.",
+    difficulty: "Ușor",
+  },
+  {
+    id: "p3",
+    title: "Captură a calului",
+    fen: "r3k2r/ppp2ppp/2n5/3qp3/3P4/2N2N2/PPP2PPP/R2QK2R w KQkq - 0 1",
+    solution: ["c3d5"],
+    sideToMove: "w",
+    hint: "Calul atacă dama și mai mult de atât.",
+    difficulty: "Mediu",
+  },
+  {
+    id: "p4",
+    title: "Mat pe ultima linie",
+    fen: "6k1/5ppp/8/8/8/8/8/4R1K1 w - - 0 1",
+    solution: ["e1e8"],
+    sideToMove: "w",
+    hint: "Pionii regelui negru sunt zidul lui de mormânt.",
+    difficulty: "Ușor",
+  },
+  {
+    id: "p5",
+    title: "Mat în 2",
+    fen: "6k1/5ppp/8/3N4/8/8/5PPP/3Q3K w - - 0 1",
+    solution: ["d5e7", "g8h8", "d1d8"],
+    sideToMove: "w",
+    hint: "Calul dă șah și împinge regele în colț, apoi dama livrează matul.",
+    difficulty: "Mediu",
+  },
+  {
+    id: "p6",
+    title: "Promovarea pionului",
+    fen: "8/P7/8/8/8/8/8/k6K w - - 0 1",
+    solution: ["a7a8q"],
+    sideToMove: "w",
+    hint: "Pionul își primește coroana.",
+    difficulty: "Ușor",
+  },
+];

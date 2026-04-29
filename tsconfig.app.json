@@ -1,0 +1,254 @@
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Chess } from "chess.js";
+import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
+import { ChessBoard } from "@/components/ChessBoard";
+import { Difficulty, getDifficultyLabel, useStockfish } from "@/lib/stockfish";
+import { toast } from "sonner";
+
+const DIFFS: Difficulty[] = ["incepator", "intermediar", "avansat"];
+
+const Joc = () => {
+  const [params, setParams] = useSearchParams();
+  const initialDif = (params.get("dif") as Difficulty) || "incepator";
+  const [difficulty, setDifficulty] = useState<Difficulty>(
+    DIFFS.includes(initialDif) ? initialDif : "incepator"
+  );
+  const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
+  const [game, setGame] = useState(() => new Chess());
+  const [fen, setFen] = useState(game.fen());
+  const [history, setHistory] = useState<string[]>([]);
+  const [thinking, setThinking] = useState(false);
+  const [status, setStatus] = useState("Rândul tău");
+
+  const { ready, getBestMove } = useStockfish();
+
+  const computeStatus = (g: Chess) => {
+    if (g.isCheckmate()) return "Șah mat!";
+    if (g.isStalemate()) return "Pat — remiză.";
+    if (g.isDraw()) return "Remiză.";
+    if (g.isCheck()) return "Șah!";
+    return g.turn() === playerColor[0] ? "Rândul tău" : "Stockfish gândește…";
+  };
+
+  // Engine moves whenever it's its turn
+  useEffect(() => {
+    if (!ready) return;
+    const isEngineTurn = game.turn() !== playerColor[0];
+    if (!isEngineTurn || game.isGameOver()) return;
+
+    let cancelled = false;
+    setThinking(true);
+    setStatus("Stockfish gândește…");
+
+    getBestMove(game.fen(), difficulty).then((uci) => {
+      if (cancelled || !uci) return;
+      const from = uci.slice(0, 2);
+      const to = uci.slice(2, 4);
+      const promo = uci.length > 4 ? uci.slice(4, 5) : undefined;
+      try {
+        const next = new Chess(game.fen());
+        const m = next.move({ from, to, promotion: promo as "q" | "r" | "b" | "n" | undefined });
+        setGame(next);
+        setFen(next.fen());
+        if (m) setHistory((h) => [...h, m.san]);
+        setStatus(computeStatus(next));
+      } catch {
+        /* ignore */
+      } finally {
+        setThinking(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fen, ready, playerColor, difficulty]);
+
+  const handleDrop = (source: string, target: string) => {
+    if (game.turn() !== playerColor[0]) return false;
+    const next = new Chess(game.fen());
+    let moveSan: string | null = null;
+    try {
+      const m = next.move({ from: source, to: target, promotion: "q" });
+      if (!m) return false;
+      moveSan = m.san;
+    } catch {
+      return false;
+    }
+    setGame(next);
+    setFen(next.fen());
+    if (moveSan) setHistory((h) => [...h, moveSan!]);
+    setStatus(computeStatus(next));
+    return true;
+  };
+
+  const newGame = (color: "white" | "black" = playerColor, dif: Difficulty = difficulty) => {
+    const fresh = new Chess();
+    setGame(fresh);
+    setFen(fresh.fen());
+    setHistory([]);
+    setPlayerColor(color);
+    setDifficulty(dif);
+    setStatus(color === "white" ? "Rândul tău" : "Stockfish gândește…");
+  };
+
+  const undo = () => {
+    if (history.length < 2) return;
+    const next = new Chess(game.fen());
+    next.undo();
+    next.undo();
+    setGame(next);
+    setFen(next.fen());
+    setHistory((h) => h.slice(0, -2));
+    setStatus("Rândul tău");
+    toast.message("Mutări retrase.");
+  };
+
+  const movePairs = useMemo(() => {
+    const out: { n: number; w?: string; b?: string }[] = [];
+    for (let i = 0; i < history.length; i += 2) {
+      out.push({ n: i / 2 + 1, w: history[i], b: history[i + 1] });
+    }
+    return out;
+  }, [history]);
+
+  return (
+    <div className="min-h-dvh flex flex-col">
+      <SiteHeader />
+
+      <main className="flex-1 px-4 md:px-12 py-8 max-w-[1400px] mx-auto w-full">
+        <div className="mb-8">
+          <span className="text-[10px] uppercase tracking-[0.3em] text-ember font-mono">Confruntarea</span>
+          <h1 className="font-serif text-4xl md:text-5xl text-tungsten mt-2">
+            Partidă vs Stockfish
+          </h1>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 lg:gap-12">
+          {/* Board */}
+          <div className="flex flex-col items-center">
+            <div className="w-full flex justify-between items-center mb-4 px-2 text-xs font-mono uppercase tracking-widest">
+              <span className="text-tungsten-muted">
+                Adversar: <span className="text-tungsten">Stockfish</span>
+              </span>
+              <span className={thinking ? "text-ember animate-ember-pulse" : "text-wood-light"}>
+                {ready ? status : "Se încarcă motorul…"}
+              </span>
+            </div>
+            <ChessBoard
+              position={fen}
+              onPieceDrop={handleDrop}
+              boardOrientation={playerColor}
+              allowDragging={!thinking && !game.isGameOver()}
+            />
+            {game.isGameOver() && (
+              <div className="mt-6 px-6 py-3 border border-ember/40 bg-ember/10 text-ember font-mono text-xs uppercase tracking-widest">
+                Partida s-a încheiat — {status}
+              </div>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <aside className="flex flex-col gap-6">
+            {/* Difficulty */}
+            <section className="bg-mahogany-900 border border-wood/20 p-6">
+              <h3 className="text-[10px] font-mono uppercase tracking-[0.25em] text-tungsten-muted mb-4">
+                Dificultate
+              </h3>
+              <div className="flex flex-col gap-2">
+                {DIFFS.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => {
+                      setDifficulty(d);
+                      setParams({ dif: d });
+                      newGame(playerColor, d);
+                    }}
+                    className={`text-left px-4 py-3 border transition-all ${
+                      difficulty === d
+                        ? "border-ember bg-ember/10 text-tungsten"
+                        : "border-wood/20 text-tungsten-muted hover:border-wood/50 hover:text-tungsten"
+                    }`}
+                  >
+                    <div className="font-serif text-lg">{getDifficultyLabel(d)}</div>
+                    <div className="text-[10px] font-mono uppercase tracking-widest opacity-70 mt-0.5">
+                      {d === "incepator" && "Skill 2 · adâncime 4"}
+                      {d === "intermediar" && "Skill 10 · adâncime 10"}
+                      {d === "avansat" && "Skill 20 · adâncime 18"}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* Color */}
+            <section className="bg-mahogany-900 border border-wood/20 p-6">
+              <h3 className="text-[10px] font-mono uppercase tracking-[0.25em] text-tungsten-muted mb-4">
+                Joacă cu
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {(["white", "black"] as const).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => newGame(c, difficulty)}
+                    className={`px-4 py-3 border transition-all ${
+                      playerColor === c
+                        ? "border-ember bg-ember/10 text-tungsten"
+                        : "border-wood/20 text-tungsten-muted hover:border-wood/50 hover:text-tungsten"
+                    }`}
+                  >
+                    {c === "white" ? "♔ Alb" : "♚ Negru"}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* Actions */}
+            <section className="flex gap-2">
+              <button
+                onClick={() => newGame()}
+                className="flex-1 px-4 py-3 bg-ember text-tungsten text-xs uppercase tracking-widest hover:bg-ember-glow transition-colors"
+              >
+                Partidă nouă
+              </button>
+              <button
+                onClick={undo}
+                disabled={history.length < 2}
+                className="flex-1 px-4 py-3 border border-wood/40 text-tungsten text-xs uppercase tracking-widest hover:bg-mahogany-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Retrage mutarea
+              </button>
+            </section>
+
+            {/* Move history */}
+            <section className="bg-mahogany-900 border border-wood/20 p-6 max-h-[320px] overflow-auto">
+              <h3 className="text-[10px] font-mono uppercase tracking-[0.25em] text-tungsten-muted mb-4">
+                Notație
+              </h3>
+              {movePairs.length === 0 ? (
+                <p className="text-sm italic text-wood-light">Partida nu a început.</p>
+              ) : (
+                <ol className="space-y-1 text-sm font-mono">
+                  {movePairs.map((p) => (
+                    <li key={p.n} className="grid grid-cols-[2rem_1fr_1fr] gap-2 text-tungsten-muted">
+                      <span className="text-wood-light">{p.n}.</span>
+                      <span className="text-tungsten">{p.w}</span>
+                      <span className="text-tungsten">{p.b ?? ""}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </aside>
+        </div>
+      </main>
+
+      <SiteFooter />
+    </div>
+  );
+};
+
+export default Joc;
